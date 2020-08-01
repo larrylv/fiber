@@ -51,6 +51,8 @@ type App struct {
 	mutex sync.Mutex
 	// Route stack divided by HTTP methods
 	stack [][]*Route
+	// Root radix tree node for the router
+	rootRouteNode *RouteNode
 	// Amount of registered handlers
 	handlerCount int
 	// Ctx pool
@@ -238,6 +240,12 @@ func New(settings ...*Settings) *App {
 			New: func() interface{} {
 				return new(Ctx)
 			},
+		},
+		// Create root node whose path is default `""`.
+		rootRouteNode: &RouteNode{
+			Path:           "",
+			MethodHandlers: make(map[string][]Handler),
+			ChildrenNodes:  make(map[string]*RouteNode),
 		},
 		// Set settings
 		Settings: &Settings{},
