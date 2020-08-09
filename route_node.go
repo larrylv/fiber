@@ -22,43 +22,55 @@ type routeSegment struct {
 	EndChar    byte
 }
 
-// RouteNode is a radix tree node that holds metadata for a segment of a
-// registered route. Route segments are separated by `/`. `App` should hold a
+// RouteNode is a radix tree node that holds metadata for a section of a
+// registered route. Route sections are separated by `/`. `App` should hold a
 // pointer of the root RouteNode, and use it to find the handler given a url.
 type RouteNode struct {
 	pathPretty     string                // Create a stripped path in-case sensitive / trailing slashes
 	Path           string                // Original registered route path
 	MethodHandlers [][]Handler           // key is the http method
-	ChildrenNodes  map[string]*RouteNode // key is the full segment
-	Segments       []routeSegment        // Each route has its own segments, separated by hyphen `-` and colon `:`. TODO(larrylv): add regexp support
+	ChildrenNodes  map[string]*RouteNode // key is the full section
+	Segments       []routeSegment        // Segments stored the route parts separated by hyphen `-` and colon `:`. TODO(larrylv): add regexp support
 	Params         []string              // Case sensitive param keys
 }
 
-var routeSegmentDelimiter = ".-/"
+var routeSegmentDelimiter = ".-"
 
 func (app *App) findHandlers(path string, methodInt int) []Handler {
-	segments := strings.SplitAfter(path, "/")
+	pathSections := strings.SplitAfter(path, "/")
 	currentNode := app.rootRouteNode
 	if path == "/" && currentNode.pathPretty == "" { // it's the root node
 		handlers := currentNode.MethodHandlers[methodInt]
 		return handlers
 	}
 
-	return currentNode.findHandlers(segments, path, methodInt)
+	// If the path has a trailing slash, the last part will be an empty string,
+	// and we should just get rid of it.
+	if len(pathSections) > 1 && pathSections[len(pathSections)-1] == "" {
+		pathSections = pathSections[:len(pathSections)-1]
+	}
+
+	return currentNode.findHandlers(
+		pathSections,
+		path,
+		methodInt,
+		app.Settings.CaseSensitive,
+		app.Settings.StrictRouting,
+	)
 }
 
 func (app *App) buildRouteNode(method, path string, handlers ...Handler) {
-	segments := strings.SplitAfter(path, "/")
-	// The first segment should always be `/` since callers should preappend a
+	pathSections := strings.SplitAfter(path, "/")
+	// The first section should always be `/` since callers should preappend a
 	// `/` to the path if the path doesn't start with `/`. This check makes sure
 	// we tolerate if callers make a mistake, and does nothing but return.
-	if len(segments) == 0 || segments[0] != "/" {
+	if len(pathSections) == 0 || pathSections[0] != "/" {
 		return
 	}
 
 	buildChildRouteNode(
 		app.rootRouteNode,
-		segments[1:],
+		pathSections[1:],
 		method,
 		app.Settings.CaseSensitive,
 		app.Settings.StrictRouting,
@@ -69,53 +81,50 @@ func (app *App) buildRouteNode(method, path string, handlers ...Handler) {
 // buildChildRouteNode tries to build the child node for the passed parent node.
 // If the child node is nil, it adds the handlers to parent node. Otherwise, it
 // saves the child node on the `ChildrennNodes` field on parent node.
-func buildChildRouteNode(parentNode *RouteNode, pathSegments []string, method string, isCaseSensitive bool, isStrictRouting bool, handlers ...Handler) *RouteNode {
-	// When there is only an empty string in the `pathSegments`, that means we
-	// reach the end of the url path, and the last node is the leaf node.
-	if len(pathSegments) == 0 || (len(pathSegments) == 1 && pathSegments[0] == "") {
+func buildChildRouteNode(parentNode *RouteNode, pathSections []string, method string, isCaseSensitive bool, isStrictRouting bool, handlers ...Handler) *RouteNode {
+	// When there is only an empty string in the `pathSections`, that means we
+	// reach the end of the url path, and the last parent node is the leaf node.
+	if len(pathSections) == 0 || (len(pathSections) == 1 && pathSections[0] == "") {
 		addHandlersToNode(parentNode, method, handlers...)
 		return nil
 	}
 
-	pathRaw := pathSegments[0]
-	pathPretty := pathRaw
+	sectionRaw := pathSections[0]
+	sectionPretty := sectionRaw
 	// Case sensitive routing, all to lowercase
 	if !isCaseSensitive {
-		pathPretty = utils.ToLower(pathPretty)
+		sectionPretty = utils.ToLower(sectionPretty)
 	}
-	// We should remove trailing slashes when the current segment is not `/`, and
+	// We should remove trailing slashes when the current section is not `/`, and
 	// either of the conditions below is true:
-	// 1. this is not the last path segment
-	// 2. this is the last path segment, and strict routing is disabled.
-	if len(pathPretty) > 1 {
-		if len(pathSegments) > 1 || !isStrictRouting {
-			pathPretty = utils.TrimRight(pathPretty, '/')
+	// 1. this is not the last path section
+	// 2. this is the last path section, and strict routing is disabled.
+	if len(sectionPretty) > 1 {
+		if len(pathSections) > 1 || !isStrictRouting {
+			sectionPretty = utils.TrimRight(sectionPretty, '/')
 		}
 	}
 
-	currentRouteNode, ok := parentNode.ChildrenNodes[pathPretty]
-	// there isn't a current RouteNode for `pathSegments[0]`, so let's create one
+	currentRouteNode, ok := parentNode.ChildrenNodes[sectionPretty]
+	// If there isn't a RouteNode for the current section, we create one
 	if !ok {
 		currentRouteNode = &RouteNode{
-			pathPretty:    pathPretty,
-			Path:          pathRaw,
+			pathPretty:    sectionPretty,
+			Path:          sectionRaw,
 			ChildrenNodes: make(map[string]*RouteNode),
 		}
 		currentRouteNode.build()
+		parentNode.ChildrenNodes[sectionPretty] = currentRouteNode
 	}
 
-	childNode := buildChildRouteNode(
+	buildChildRouteNode(
 		currentRouteNode,
-		pathSegments[1:],
+		pathSections[1:],
 		method,
 		isCaseSensitive,
 		isStrictRouting,
 		handlers...,
 	)
-
-	if childNode != nil {
-		parentNode.ChildrenNodes[pathPretty] = childNode
-	}
 
 	return currentRouteNode
 }
@@ -132,19 +141,23 @@ func addHandlersToNode(node *RouteNode, method string, handlers ...Handler) {
 	)
 }
 
-func (node *RouteNode) findHandlers(segments []string, path string, methodInt int) []Handler {
-	if len(segments) == 0 {
+func (node *RouteNode) findHandlers(pathSections []string, path string, methodInt int, isCaseSensitive, isStrictRouting bool) []Handler {
+	if len(pathSections) == 0 {
 		return nil
 	}
 
-	currentSegment := segments[0]
-	if node.match(currentSegment) {
-		if len(segments) == 1 {
+	currentSection := pathSections[0]
+	isLastSection := len(pathSections) == 1
+	if node.match(currentSection, isLastSection, isCaseSensitive, isStrictRouting) {
+		if isLastSection {
+			if node.MethodHandlers == nil {
+				return nil
+			}
 			return node.MethodHandlers[methodInt]
 		}
 
 		for _, childNode := range node.ChildrenNodes {
-			handlers := childNode.findHandlers(segments[1:], path, methodInt)
+			handlers := childNode.findHandlers(pathSections[1:], path, methodInt, isCaseSensitive, isStrictRouting)
 			if handlers != nil {
 				return handlers
 			}
@@ -156,20 +169,30 @@ func (node *RouteNode) findHandlers(segments []string, path string, methodInt in
 	return nil
 }
 
-func (node *RouteNode) match(s string) bool {
-	if node.pathPretty == s {
-		return true
+func (node *RouteNode) match(s string, isLastSection, isCaseSensitive, isStrictRouting bool) bool {
+	if !isCaseSensitive {
+		s = utils.ToLower(s)
 	}
 
-	return false
+	if isLastSection {
+		if !isStrictRouting {
+			return node.pathPretty == s || node.pathPretty+"/" == s
+		} else {
+			return node.pathPretty == s
+		}
+	}
+
+	// pathPretty of non-last section doesn't have trailing slash
+	return node.pathPretty+"/" == s
 }
 
 func (node *RouteNode) build() {
-	pattern := node.Path
-	part, delimiterPos := "", 0
+	pattern := node.pathPretty
+	part, delimiterPos := "", findNextRouteSegmentDelimiter(pattern)
 
+	// If the initial `delimiterPos` is `-1`, we could avoid storing it in the
+	// `Segments` since we could just use `node.pathPretty` directly
 	for len(pattern) > 0 && delimiterPos != -1 {
-		delimiterPos = findNextRouteSegmentDelimiter(pattern)
 		if delimiterPos != -1 {
 			part = pattern[:delimiterPos]
 		} else {
@@ -208,6 +231,8 @@ func (node *RouteNode) build() {
 			node.Segments[lastSeg].EndChar = pattern[delimiterPos]
 			pattern = pattern[delimiterPos+1:]
 		}
+
+		delimiterPos = findNextRouteSegmentDelimiter(pattern)
 	}
 	if len(node.Segments) > 0 {
 		node.Segments[len(node.Segments)-1].IsLast = true
