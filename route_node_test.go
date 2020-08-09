@@ -247,3 +247,59 @@ func Test_RouteNode_CaseSensitive(t *testing.T) {
 		{url: "/api/v1/const", method: MethodPost, match: false},
 	})
 }
+
+var testBenchmarkRoutes = []string{
+	"/user",
+	"/user/k",
+	"/user/k/1234",
+	"/user/ke",
+	"/user/ke/1234",
+	"/user/key",
+	"/user/key/1234",
+	"/user/keys",
+	"/user/keys/1234",
+}
+
+// go test -v ./... -run=^$ -bench=Benchmark_OldRouter -benchmem -count=4
+func Benchmark_OldRouter(b *testing.B) {
+	var match bool
+
+	var routes []*Route
+	for _, routePath := range testBenchmarkRoutes {
+		parsed := parseRoute(routePath)
+		route := &Route{
+			use:         false,
+			root:        false,
+			star:        false,
+			routeParser: parsed,
+			path:        routePath,
+
+			Path:   routePath,
+			Method: "GET",
+		}
+		route.Handlers = append(route.Handlers, func(c *Ctx) {})
+		routes = append(routes, route)
+	}
+	for n := 0; n < b.N; n++ {
+		match = false
+		for _, route := range routes {
+			match, _ = route.match("/user/keys/1234", "/user/keys/1234")
+			if match {
+				break
+			}
+		}
+		utils.AssertEqual(b, true, match)
+	}
+}
+
+// go test -v ./... -run=^$ -bench=Benchmark_RadixTreeBasedRouter -benchmem -count=4
+func Benchmark_RadixTreeBasedRouter(b *testing.B) {
+	app := New()
+	for _, routePath := range testBenchmarkRoutes {
+		app.buildRouteNode("GET", routePath, func(ctx *Ctx) {})
+	}
+	for n := 0; n < b.N; n++ {
+		handlers := app.findHandlers("/user/keys/1234", methodInt("GET"))
+		utils.AssertEqual(b, true, handlers != nil)
+	}
+}
