@@ -31,22 +31,22 @@ type RouteNode struct {
 	Path           string                // Original registered route path
 	MethodHandlers [][]Handler           // key is the http method
 	ChildrenNodes  map[string]*RouteNode // key is the full section
-	Segments       []routeSegment        // Segments stored the route parts separated by hyphen `-` and colon `:`. TODO(larrylv): add regexp support
+	Segments       []routeSegment        // Segments are the route path separated by hyphen `-` and colon `:`. TODO(larrylv): add regexp support
 	Params         []string              // Case sensitive param keys
 }
 
 var routeSegmentDelimiter = ".-"
 
 func (app *App) findHandlers(path string, methodInt int) []Handler {
-	pathSections := strings.SplitAfter(path, "/")
 	currentNode := app.rootRouteNode
-	if path == "/" && currentNode.pathPretty == "" { // it's the root node
+	if path == "/" {
 		handlers := currentNode.MethodHandlers[methodInt]
 		return handlers
 	}
 
-	// If the path has a trailing slash, the last part will be an empty string,
-	// and we should just get rid of it.
+	pathSections := strings.SplitAfter(path, "/")
+	// If the path has a trailing slash, the last section will be an empty
+	// string, and we get rid of it since it's useless for routing.
 	if len(pathSections) > 1 && pathSections[len(pathSections)-1] == "" {
 		pathSections = pathSections[:len(pathSections)-1]
 	}
@@ -63,10 +63,14 @@ func (app *App) findHandlers(path string, methodInt int) []Handler {
 func (app *App) buildRouteNode(method, path string, handlers ...Handler) {
 	pathSections := strings.SplitAfter(path, "/")
 	// The first section should always be `/` since callers should preappend a
-	// `/` to the path if the path doesn't start with `/`. This check makes sure
-	// we tolerate if callers make a mistake, and does nothing but return.
+	// `/` to the path if the path doesn't start with `/`.
 	if len(pathSections) == 0 || pathSections[0] != "/" {
-		return
+		panic(fmt.Sprintf("buildRouteNode: invalid path %s, should start with a /\n", path))
+	}
+	// If the path has a trailing slash, the last section will be an empty
+	// string, and we get rid of it since it's useless for routing.
+	if len(pathSections) > 1 && pathSections[len(pathSections)-1] == "" {
+		pathSections = pathSections[:len(pathSections)-1]
 	}
 	methodInt := methodInt(method)
 	if methodInt == -1 {
@@ -83,13 +87,11 @@ func (app *App) buildRouteNode(method, path string, handlers ...Handler) {
 	)
 }
 
-// buildChildRouteNode tries to build the child node for the passed parent node.
-// If the child node is nil, it adds the handlers to parent node. Otherwise, it
-// saves the child node on the `ChildrennNodes` field on parent node.
+// buildChildRouteNode tries to build the child node and its children nodes given
+// a parentNode and all path sections. If path sections are empty, that means the
+// passed parentNode is the leaf node that should holder the handlers.
 func buildChildRouteNode(parentNode *RouteNode, pathSections []string, methodInt int, isCaseSensitive bool, isStrictRouting bool, handlers ...Handler) *RouteNode {
-	// When there is only an empty string in the `pathSections`, that means we
-	// reach the end of the url path, and the last parent node is the leaf node.
-	if len(pathSections) == 0 || (len(pathSections) == 1 && pathSections[0] == "") {
+	if len(pathSections) == 0 {
 		addHandlersToNode(parentNode, methodInt, handlers...)
 		return nil
 	}
@@ -100,9 +102,9 @@ func buildChildRouteNode(parentNode *RouteNode, pathSections []string, methodInt
 	if !isCaseSensitive {
 		sectionPretty = utils.ToLower(sectionPretty)
 	}
-	// We should remove trailing slashes when the current section is not `/`, and
-	// either of the conditions below is true:
-	// 1. this is not the last path section
+	// We should remove trailing slashes when the either of the conditions below
+	// is true:
+	// 1. this is not the last path section, strict routing enabled or not.
 	// 2. this is the last path section, and strict routing is disabled.
 	if len(sectionPretty) > 1 {
 		if len(pathSections) > 1 || !isStrictRouting {
@@ -110,6 +112,8 @@ func buildChildRouteNode(parentNode *RouteNode, pathSections []string, methodInt
 		}
 	}
 
+	// Use `sectionPretty` as the key for children nodes, so that we always use
+	// the same node for routes with the same `sectionPretty`.
 	currentRouteNode, ok := parentNode.ChildrenNodes[sectionPretty]
 	// If there isn't a RouteNode for the current section, we create one
 	if !ok {
@@ -135,6 +139,8 @@ func buildChildRouteNode(parentNode *RouteNode, pathSections []string, methodInt
 }
 
 func addHandlersToNode(node *RouteNode, methodInt int, handlers ...Handler) {
+	// lazy initialize `MethodHandlers` since some node might not have any
+	// handlers associated with.
 	if node.MethodHandlers == nil {
 		node.MethodHandlers = make([][]Handler, len(intMethod))
 	}
@@ -145,6 +151,7 @@ func addHandlersToNode(node *RouteNode, methodInt int, handlers ...Handler) {
 	)
 }
 
+// findHandlers returns the handlers on a node that matches `pathSections`.
 func (node *RouteNode) findHandlers(pathSections []string, path string, methodInt int, isCaseSensitive, isStrictRouting bool) []Handler {
 	if len(pathSections) == 0 {
 		return nil
@@ -160,6 +167,8 @@ func (node *RouteNode) findHandlers(pathSections []string, path string, methodIn
 			return node.MethodHandlers[methodInt]
 		}
 
+		// loop children nodes, and see there are matches.
+		// TODO(larrylv): add index support
 		for _, childNode := range node.ChildrenNodes {
 			handlers := childNode.findHandlers(pathSections[1:], path, methodInt, isCaseSensitive, isStrictRouting)
 			if handlers != nil {
@@ -194,8 +203,8 @@ func (node *RouteNode) build() {
 	pattern := node.pathPretty
 	part, delimiterPos := "", findNextRouteSegmentDelimiter(pattern)
 
-	// If the initial `delimiterPos` is `-1`, we could avoid storing it in the
-	// `Segments` since we could just use `node.pathPretty` directly
+	// If the initial `delimiterPos` is `-1`, we could avoid storing anything in
+	// `node.Segments` since `match` will just use `node.pathPretty` directly.
 	for len(pattern) > 0 && delimiterPos != -1 {
 		if delimiterPos != -1 {
 			part = pattern[:delimiterPos]
