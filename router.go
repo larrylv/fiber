@@ -167,7 +167,6 @@ func (app *App) register(method, pathRaw string, handlers ...Handler) *RouteNode
 	if pathRaw[0] != '/' {
 		pathRaw = "/" + pathRaw
 	}
-	app.buildRouteNode(method, pathRaw, handlers...)
 
 	// Create a stripped path in-case sensitive / trailing slashes
 	pathPretty := pathRaw

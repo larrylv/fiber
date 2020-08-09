@@ -7,6 +7,7 @@
 package fiber
 
 import (
+	"fmt"
 	"strings"
 
 	utils "github.com/gofiber/utils"
@@ -67,11 +68,15 @@ func (app *App) buildRouteNode(method, path string, handlers ...Handler) {
 	if len(pathSections) == 0 || pathSections[0] != "/" {
 		return
 	}
+	methodInt := methodInt(method)
+	if methodInt == -1 {
+		panic(fmt.Sprintf("buildRouteNode: invalid http method %s\n", method))
+	}
 
 	buildChildRouteNode(
 		app.rootRouteNode,
 		pathSections[1:],
-		method,
+		methodInt,
 		app.Settings.CaseSensitive,
 		app.Settings.StrictRouting,
 		handlers...,
@@ -81,11 +86,11 @@ func (app *App) buildRouteNode(method, path string, handlers ...Handler) {
 // buildChildRouteNode tries to build the child node for the passed parent node.
 // If the child node is nil, it adds the handlers to parent node. Otherwise, it
 // saves the child node on the `ChildrennNodes` field on parent node.
-func buildChildRouteNode(parentNode *RouteNode, pathSections []string, method string, isCaseSensitive bool, isStrictRouting bool, handlers ...Handler) *RouteNode {
+func buildChildRouteNode(parentNode *RouteNode, pathSections []string, methodInt int, isCaseSensitive bool, isStrictRouting bool, handlers ...Handler) *RouteNode {
 	// When there is only an empty string in the `pathSections`, that means we
 	// reach the end of the url path, and the last parent node is the leaf node.
 	if len(pathSections) == 0 || (len(pathSections) == 1 && pathSections[0] == "") {
-		addHandlersToNode(parentNode, method, handlers...)
+		addHandlersToNode(parentNode, methodInt, handlers...)
 		return nil
 	}
 
@@ -120,7 +125,7 @@ func buildChildRouteNode(parentNode *RouteNode, pathSections []string, method st
 	buildChildRouteNode(
 		currentRouteNode,
 		pathSections[1:],
-		method,
+		methodInt,
 		isCaseSensitive,
 		isStrictRouting,
 		handlers...,
@@ -129,14 +134,16 @@ func buildChildRouteNode(parentNode *RouteNode, pathSections []string, method st
 	return currentRouteNode
 }
 
-func addHandlersToNode(node *RouteNode, method string, handlers ...Handler) {
+func addHandlersToNode(node *RouteNode, methodInt int, handlers ...Handler) {
 	if node.MethodHandlers == nil {
 		node.MethodHandlers = make([][]Handler, len(intMethod))
 	}
+	if node.MethodHandlers[methodInt] == nil {
+		node.MethodHandlers[methodInt] = []Handler{}
+	}
 
-	mIndex := methodInt(method)
-	node.MethodHandlers[mIndex] = append(
-		node.MethodHandlers[mIndex],
+	node.MethodHandlers[methodInt] = append(
+		node.MethodHandlers[methodInt],
 		handlers...,
 	)
 }
