@@ -22,6 +22,18 @@ type routeSegment struct {
 	EndChar    byte
 }
 
+// RouteNode is a radix tree node that holds metadata for a segment of a
+// registered route. Route segments are separated by `/`. `App` should hold a
+// pointer of the root RouteNode, and use it to find the handler given a url.
+type RouteNode struct {
+	pathPretty     string                // Create a stripped path in-case sensitive / trailing slashes
+	Path           string                // Original registered route path
+	MethodHandlers [][]Handler           // key is the http method
+	ChildrenNodes  map[string]*RouteNode // key is the full segment
+	Segments       []routeSegment        // Each route has its own segments, separated by hyphen `-` and colon `:`. TODO(larrylv): add regexp support
+	Params         []string              // Case sensitive param keys
+}
+
 var routeSegmentDelimiter = ".-/"
 
 func (app *App) buildRouteNode(method, path string, handlers ...Handler) {
@@ -99,11 +111,12 @@ func buildChildRouteNode(parentNode *RouteNode, pathSegments []string, method st
 
 func addHandlersToNode(node *RouteNode, method string, handlers ...Handler) {
 	if node.MethodHandlers == nil {
-		node.MethodHandlers = make(map[string][]Handler)
+		node.MethodHandlers = make([][]Handler, len(intMethod))
 	}
 
-	node.MethodHandlers[method] = append(
-		node.MethodHandlers[method],
+	mIndex := methodInt(method)
+	node.MethodHandlers[mIndex] = append(
+		node.MethodHandlers[mIndex],
 		handlers...,
 	)
 }

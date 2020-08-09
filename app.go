@@ -244,7 +244,7 @@ func New(settings ...*Settings) *App {
 		// Create root node whose path is default `""`.
 		rootRouteNode: &RouteNode{
 			Path:           "",
-			MethodHandlers: make(map[string][]Handler),
+			MethodHandlers: make([][]Handler, len(intMethod)),
 			ChildrenNodes:  make(map[string]*RouteNode),
 		},
 		// Set settings

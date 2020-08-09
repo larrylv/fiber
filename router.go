@@ -50,18 +50,6 @@ type Route struct {
 	Handlers []Handler `json:"-"`      // Ctx handlers
 }
 
-// RouteNode is a radix tree node that holds metadata for a segment of a
-// registered route. Route segments are separated by `/`. `App` should hold a
-// pointer of the root RouteNode, and use it to find the handler given a url.
-type RouteNode struct {
-	pathPretty     string                // Create a stripped path in-case sensitive / trailing slashes
-	Path           string                // Original registered route path
-	MethodHandlers map[string][]Handler  // key is the http method
-	ChildrenNodes  map[string]*RouteNode // key is the full segment
-	Segments       []routeSegment        // Each route has its own segments, separated by hyphen `-` and colon `:`. TODO(larrylv): add regexp support
-	Params         []string              // Case sensitive param keys
-}
-
 func (r *Route) match(path, original string) (match bool, values []string) {
 	// root path check
 	if r.root && path == "/" {
