@@ -187,6 +187,20 @@ func (node *RouteNode) match(s string, isLastSection, isCaseSensitive, isStrictR
 		s = utils.ToLower(s)
 	}
 
+	if node.isConst() {
+		return node.matchConst(s, isLastSection, isStrictRouting)
+	}
+
+	// TODO: add param match functionality
+	return false
+}
+
+// isConst returns true when the node has no routeSegmentDelimiter in it.
+func (node *RouteNode) isConst() bool {
+	return len(node.Segments) == 0
+}
+
+func (node *RouteNode) matchConst(s string, isLastSection, isStrictRouting bool) bool {
 	if isLastSection {
 		if !isStrictRouting {
 			return node.pathPretty == s || node.pathPretty+"/" == s
