@@ -31,11 +31,17 @@ type RouteNode struct {
 	Path           string                // Original registered route path
 	MethodHandlers [][]Handler           // key is the http method
 	ChildrenNodes  map[string]*RouteNode // key is the full section
-	Segments       []routeSegment        // Segments are the route path separated by hyphen `-` and colon `:`. TODO(larrylv): add regexp support
+	Segments       []routeSegment        // Segments are the route path separated by hyphen `-` and colon `:`.
 	Params         []string              // Case sensitive param keys
 }
 
+// `.` and `-` could used to separate named parameters
 var routeSegmentDelimiter = ".-"
+
+// `:` means there is named parameter in the route, and `+` / `*` means it has
+// regexp characters.
+// TODO(larrylv): add `(`, `)`, `.` and `.*` regexp support.
+var routeParameterOrRegexpIndicator = ":+*"
 
 func (app *App) findHandlers(path string, methodInt int) []Handler {
 	currentNode := app.rootRouteNode
@@ -191,7 +197,10 @@ func (node *RouteNode) match(s string, isLastSection, isCaseSensitive, isStrictR
 		return node.matchConst(s, isLastSection, isStrictRouting)
 	}
 
-	// TODO: add param match functionality
+	// TODO: add wildcard match functionality
+	// if node.isWildcardParam() {
+	// }
+
 	return false
 }
 
@@ -199,6 +208,11 @@ func (node *RouteNode) match(s string, isLastSection, isCaseSensitive, isStrictR
 func (node *RouteNode) isConst() bool {
 	return len(node.Segments) == 0
 }
+
+// isWildcardParam returns true when the node has no routeSegmentDelimiter in it.
+// func (node *RouteNode) isWildcardParam() bool {
+// 	return node.pathPretty == "*"
+// }
 
 func (node *RouteNode) matchConst(s string, isLastSection, isStrictRouting bool) bool {
 	if isLastSection {
@@ -215,6 +229,12 @@ func (node *RouteNode) matchConst(s string, isLastSection, isStrictRouting bool)
 
 func (node *RouteNode) build() {
 	pattern := node.pathPretty
+	// If the node is a string with no `:` or any regexp characters in it, we
+	// could treat it as a Const. E.g.: `abc-def`.
+	if !strings.ContainsAny(pattern, routeParameterOrRegexpIndicator) {
+		return
+	}
+
 	part, delimiterPos := "", findNextRouteSegmentDelimiter(pattern)
 
 	// If the initial `delimiterPos` is `-1`, we could avoid storing anything in

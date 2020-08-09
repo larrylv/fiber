@@ -88,6 +88,14 @@ func Test_RouteNode_matchParams(t *testing.T) {
 		{url: "/api/v1/", params: nil, match: false},
 		{url: "/api/v1/something", params: nil, match: false},
 	})
+	testCase("/api/v1/const-route", MethodGet, []testparams{
+		{url: "/api/v1/const-route", params: []string{}, match: true},
+		{url: "/api/v1/const-route/", params: []string{}, match: true},
+		{url: "/api/v1/const", params: nil, match: false},
+		{url: "/api/v1/const-/", params: nil, match: false},
+		{url: "/api/v1/const-", params: nil, match: false},
+		{url: "/api/v1/something", params: nil, match: false},
+	})
 	// testCase("/api/v1/:param/abc/*", MethodGet, []testparams{
 	// 	{url: "/api/v1/well/abc/wildcard", params: []string{"well", "wildcard"}, match: true},
 	// 	{url: "/api/v1/well/abc/", params: []string{"well", ""}, match: true},
