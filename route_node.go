@@ -30,10 +30,11 @@ type RouteNode struct {
 	pathPretty string         // Create a stripped path in-case sensitive / trailing slashes
 	segments   []routeSegment // segments are the route path separated by hyphen `-` and colon `:`.
 
-	Path           string                // Original registered route path
-	MethodHandlers [][]Handler           // key is the http method
-	ChildrenNodes  map[string]*RouteNode // key is the full section
-	Params         []string              // Case sensitive param keys
+	Path                string                // Original registered route path
+	ParentNode          *RouteNode            // parent node
+	MethodHandlers      [][]Handler           // key is the http method
+	ChildrenNodes       map[string]*RouteNode // key is the full section
+	ParamsSinceRootNode []string              // All param keys since the root node, not only the params in the current node.
 }
 
 // `.` and `-` could used to separate named parameters
@@ -126,6 +127,7 @@ func buildChildRouteNode(parentNode *RouteNode, pathSections []string, methodInt
 		currentRouteNode = &RouteNode{
 			pathPretty:    sectionPretty,
 			Path:          sectionRaw,
+			ParentNode:    parentNode,
 			ChildrenNodes: make(map[string]*RouteNode),
 		}
 		currentRouteNode.build()
@@ -301,7 +303,7 @@ func (node *RouteNode) build() {
 				IsOptional: part == wildcardParam || part[partLen-1] == '?',
 			})
 			lastSeg = len(node.segments) - 1
-			node.Params = append(node.Params, node.segments[lastSeg].Param)
+			node.ParamsSinceRootNode = append(node.ParamsSinceRootNode, node.segments[lastSeg].Param)
 			// combine const segments
 		} else if lastSeg >= 0 && !node.segments[lastSeg].IsParam {
 			node.segments[lastSeg].Const += string(node.segments[lastSeg].EndChar) + part
