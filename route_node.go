@@ -138,9 +138,6 @@ func addHandlersToNode(node *RouteNode, methodInt int, handlers ...Handler) {
 	if node.MethodHandlers == nil {
 		node.MethodHandlers = make([][]Handler, len(intMethod))
 	}
-	if node.MethodHandlers[methodInt] == nil {
-		node.MethodHandlers[methodInt] = []Handler{}
-	}
 
 	node.MethodHandlers[methodInt] = append(
 		node.MethodHandlers[methodInt],

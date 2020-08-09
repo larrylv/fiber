@@ -147,17 +147,19 @@ func Test_Middleware_Compress_Panic(t *testing.T) {
 // go test -v ./... -run=^$ -bench=Benchmark_Middleware_Compress -benchmem -count=4
 func Benchmark_Middleware_Compress(b *testing.B) {
 	app := fiber.New()
+	app.Use(Compress())
+	app.Get("/", func(c *fiber.Ctx) {
+		c.SendFile(compressFilePath(CompressLevelDefault), true)
+	})
+	handler := app.Handler()
+
 	c := &fasthttp.RequestCtx{}
 	c.Request.SetRequestURI("/")
 
 	b.ReportAllocs()
 	b.ResetTimer()
 	for n := 0; n < b.N; n++ {
-		app.Use(Compress())
-		app.Get("/", func(c *fiber.Ctx) {
-			c.SendFile(compressFilePath(CompressLevelDefault), true)
-		})
-		app.Handler()(c)
+		handler(c)
 	}
 }
 
