@@ -148,7 +148,7 @@ func (app *App) handler(rctx *fasthttp.RequestCtx) {
 	app.ReleaseCtx(ctx)
 }
 
-func (app *App) register(method, pathRaw string, handlers ...Handler) Route {
+func (app *App) register(method, pathRaw string, handlers ...Handler) *RouteNode {
 	// Uppercase HTTP methods
 	method = utils.ToUpper(method)
 	// Check if the HTTP method is valid unless it's USE
@@ -216,13 +216,15 @@ func (app *App) register(method, pathRaw string, handlers ...Handler) Route {
 			// create a route copy
 			r := route
 			app.addRoute(m, &r)
+			app.buildRouteNode(m, pathRaw, handlers...)
 		}
-		return route
+		return app.rootRouteNode
 	}
 
 	// Add route to stack
 	app.addRoute(method, &route)
-	return route
+	app.buildRouteNode(method, pathRaw, handlers...)
+	return app.rootRouteNode
 }
 
 func (app *App) registerStatic(prefix, root string, config ...Static) Route {

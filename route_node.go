@@ -36,6 +36,17 @@ type RouteNode struct {
 
 var routeSegmentDelimiter = ".-/"
 
+func (app *App) findHandlers(path string, methodInt int) []Handler {
+	segments := strings.SplitAfter(path, "/")
+	currentNode := app.rootRouteNode
+	if path == "/" && currentNode.pathPretty == "" { // it's the root node
+		handlers := currentNode.MethodHandlers[methodInt]
+		return handlers
+	}
+
+	return currentNode.findHandlers(segments, path, methodInt)
+}
+
 func (app *App) buildRouteNode(method, path string, handlers ...Handler) {
 	segments := strings.SplitAfter(path, "/")
 	// The first segment should always be `/` since callers should preappend a
@@ -75,7 +86,7 @@ func buildChildRouteNode(parentNode *RouteNode, pathSegments []string, method st
 	// We should remove trailing slashes when the current segment is not `/`, and
 	// either of the conditions below is true:
 	// 1. this is not the last path segment
-	// 2. this is the last path segment, and app is not strict routing.
+	// 2. this is the last path segment, and strict routing is disabled.
 	if len(pathPretty) > 1 {
 		if len(pathSegments) > 1 || !isStrictRouting {
 			pathPretty = utils.TrimRight(pathPretty, '/')
@@ -119,6 +130,38 @@ func addHandlersToNode(node *RouteNode, method string, handlers ...Handler) {
 		node.MethodHandlers[mIndex],
 		handlers...,
 	)
+}
+
+func (node *RouteNode) findHandlers(segments []string, path string, methodInt int) []Handler {
+	if len(segments) == 0 {
+		return nil
+	}
+
+	currentSegment := segments[0]
+	if node.match(currentSegment) {
+		if len(segments) == 1 {
+			return node.MethodHandlers[methodInt]
+		}
+
+		for _, childNode := range node.ChildrenNodes {
+			handlers := childNode.findHandlers(segments[1:], path, methodInt)
+			if handlers != nil {
+				return handlers
+			}
+		}
+	} else {
+		return nil
+	}
+
+	return nil
+}
+
+func (node *RouteNode) match(s string) bool {
+	if node.pathPretty == s {
+		return true
+	}
+
+	return false
 }
 
 func (node *RouteNode) build() {

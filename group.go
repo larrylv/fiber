@@ -42,10 +42,10 @@ func (grp *Group) Use(args ...interface{}) Router {
 // Get registers a route for GET methods that requests a representation
 // of the specified resource. Requests using GET should only retrieve data.
 func (grp *Group) Get(path string, handlers ...Handler) Router {
-	route := grp.app.register(MethodGet, getGroupPath(grp.prefix, path), handlers...)
+	groupPath := getGroupPath(grp.prefix, path)
+	grp.app.register(MethodGet, groupPath, handlers...)
 	// Add head route
-	headRoute := route
-	grp.app.addRoute(MethodHead, &headRoute)
+	grp.app.register(MethodHead, groupPath, handlers...)
 	return grp
 }
 

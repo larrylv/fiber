@@ -310,10 +310,9 @@ func (app *App) Use(args ...interface{}) Router {
 // Get registers a route for GET methods that requests a representation
 // of the specified resource. Requests using GET should only retrieve data.
 func (app *App) Get(path string, handlers ...Handler) Router {
-	route := app.register(MethodGet, path, handlers...)
+	app.register(MethodGet, path, handlers...)
 	// Add HEAD route
-	headRoute := route
-	app.addRoute(MethodHead, &headRoute)
+	app.register(MethodHead, path, handlers...)
 
 	return app
 }
