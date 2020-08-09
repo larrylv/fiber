@@ -27,11 +27,12 @@ type routeSegment struct {
 // registered route. Route sections are separated by `/`. `App` should hold a
 // pointer of the root RouteNode, and use it to find the handler given a url.
 type RouteNode struct {
-	pathPretty     string                // Create a stripped path in-case sensitive / trailing slashes
+	pathPretty string         // Create a stripped path in-case sensitive / trailing slashes
+	segments   []routeSegment // segments are the route path separated by hyphen `-` and colon `:`.
+
 	Path           string                // Original registered route path
 	MethodHandlers [][]Handler           // key is the http method
 	ChildrenNodes  map[string]*RouteNode // key is the full section
-	Segments       []routeSegment        // Segments are the route path separated by hyphen `-` and colon `:`.
 	Params         []string              // Case sensitive param keys
 }
 
@@ -44,9 +45,8 @@ var routeSegmentDelimiter = ".-"
 var routeParameterOrRegexpIndicator = ":+*"
 
 func (app *App) findHandlers(path string, methodInt int) []Handler {
-	currentNode := app.rootRouteNode
 	if path == "/" {
-		handlers := currentNode.MethodHandlers[methodInt]
+		handlers := app.rootRouteNode.MethodHandlers[methodInt]
 		return handlers
 	}
 
@@ -57,7 +57,7 @@ func (app *App) findHandlers(path string, methodInt int) []Handler {
 		pathSections = pathSections[:len(pathSections)-1]
 	}
 
-	return currentNode.findHandlers(
+	return app.rootRouteNode.findHandlers(
 		pathSections,
 		path,
 		methodInt,
@@ -201,12 +201,51 @@ func (node *RouteNode) match(s string, isLastSection, isCaseSensitive, isStrictR
 	// if node.isWildcardParam() {
 	// }
 
+	var i, j, partLen int
+	for _, segment := range node.segments {
+		partLen = len(s)
+		if segment.IsParam {
+			i = strings.IndexByte(s, segment.EndChar)
+			if i == -1 {
+				i = partLen
+			}
+			if i == 0 {
+				if !segment.IsOptional {
+					return false
+				}
+				// special case for not slash end character
+			} else if partLen == i && segment.EndChar != '/' && s[i-1] == '/' {
+				return false
+			}
+		} else {
+			// check const segment
+			i = len(segment.Const)
+			if partLen < i || (i == 0 && partLen > 0) || s[:i] != segment.Const || (partLen > i && s[i] != segment.EndChar) {
+				return false
+			}
+		}
+
+		// reduce founded part from the string
+		if partLen > 0 {
+			j = i + 1
+			if segment.IsLast || partLen < j {
+				j = i
+			}
+
+			s = s[j:]
+		}
+	}
+	// TODO(larrylv): add partial check support for USE
+	if len(s) != 0 {
+		return false
+	}
+
 	return false
 }
 
 // isConst returns true when the node has no routeSegmentDelimiter in it.
 func (node *RouteNode) isConst() bool {
-	return len(node.Segments) == 0
+	return len(node.segments) == 0
 }
 
 // isWildcardParam returns true when the node has no routeSegmentDelimiter in it.
@@ -238,7 +277,7 @@ func (node *RouteNode) build() {
 	part, delimiterPos := "", findNextRouteSegmentDelimiter(pattern)
 
 	// If the initial `delimiterPos` is `-1`, we could avoid storing anything in
-	// `node.Segments` since `match` will just use `node.pathPretty` directly.
+	// `node.segments` since `match` will just use `node.pathPretty` directly.
 	for len(pattern) > 0 && delimiterPos != -1 {
 		if delimiterPos != -1 {
 			part = pattern[:delimiterPos]
@@ -246,7 +285,7 @@ func (node *RouteNode) build() {
 			part = pattern
 		}
 
-		partLen, lastSeg := len(part), len(node.Segments)-1
+		partLen, lastSeg := len(part), len(node.segments)-1
 		if partLen == 0 { // skip empty parts
 			if len(pattern) > 0 {
 				// remove first char
@@ -256,33 +295,35 @@ func (node *RouteNode) build() {
 		}
 		// is parameter ?
 		if part[0] == '*' || part[0] == ':' {
-			node.Segments = append(node.Segments, routeSegment{
+			node.segments = append(node.segments, routeSegment{
 				Param:      utils.GetTrimmedParam(part),
 				IsParam:    true,
 				IsOptional: part == wildcardParam || part[partLen-1] == '?',
 			})
-			lastSeg = len(node.Segments) - 1
-			node.Params = append(node.Params, node.Segments[lastSeg].Param)
+			lastSeg = len(node.segments) - 1
+			node.Params = append(node.Params, node.segments[lastSeg].Param)
 			// combine const segments
-		} else if lastSeg >= 0 && !node.Segments[lastSeg].IsParam {
-			node.Segments[lastSeg].Const += string(node.Segments[lastSeg].EndChar) + part
+		} else if lastSeg >= 0 && !node.segments[lastSeg].IsParam {
+			node.segments[lastSeg].Const += string(node.segments[lastSeg].EndChar) + part
 			// create new const segment
 		} else {
-			node.Segments = append(node.Segments, routeSegment{
+			node.segments = append(node.segments, routeSegment{
 				Const: part,
 			})
-			lastSeg = len(node.Segments) - 1
+			lastSeg = len(node.segments) - 1
 		}
 
 		if delimiterPos != -1 && len(pattern) >= delimiterPos+1 {
-			node.Segments[lastSeg].EndChar = pattern[delimiterPos]
+			node.segments[lastSeg].EndChar = pattern[delimiterPos]
 			pattern = pattern[delimiterPos+1:]
 		}
 
 		delimiterPos = findNextRouteSegmentDelimiter(pattern)
 	}
-	if len(node.Segments) > 0 {
-		node.Segments[len(node.Segments)-1].IsLast = true
+	if len(node.segments) > 0 {
+		node.segments[len(node.segments)-1].IsLast = true
+		// last default end char
+		node.segments[len(node.segments)-1].EndChar = '/'
 	}
 }
 
